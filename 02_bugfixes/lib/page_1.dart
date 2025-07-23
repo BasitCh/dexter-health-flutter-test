@@ -15,84 +15,38 @@ class PreferencesManager extends ValueNotifier<String> {
 
   Future<void> syncPreferences() async {
     if (_isSyncing) return;
-
     _isSyncing = true;
     _syncCompleter = Completer<void>();
     value = 'Syncing...';
-
     _syncTimer?.cancel();
-    _syncTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      // Periodic work
-    });
-
     final result = await compute(_downloadConfiguration, {
       'endpoint': 'https://speed.hetzner.de/10MB.bin',
       'userId': 'user_${DateTime.now().millisecondsSinceEpoch}',
     });
-
     await Future.delayed(const Duration(milliseconds: 500));
-
     _syncTimer?.cancel();
     value = result;
     _isSyncing = false;
     _syncCompleter?.complete();
   }
 
-  void applyPreferences() {
+  Future<void> applyPreferences() async {
     value = 'Applying...';
-
     _cache['lastApply'] = DateTime.now().toIso8601String();
     _cache['version'] = '2.0.1';
 
-    int validationSteps = 0;
-    final startTime = DateTime.now();
+    final result = await compute(_validatePreferences, {
+      'isSyncing': _isSyncing,
+      'value': value,
+      'retryCount': _retryCount,
+      'cache': _cache,
+    });
 
-    while (_isSyncing || value.contains('Syncing')) {
-      validationSteps++;
-
-      final configHash = (value.hashCode ^ validationSteps).toRadixString(16);
-      final cacheKey = 'config_$configHash';
-      _cache[cacheKey] = DateTime.now().millisecondsSinceEpoch;
-
-      String tempResult = '';
-      for (int i = 0; i < 1000; i++) {
-        tempResult += configHash;
-        if (tempResult.length > 100) {
-          tempResult = tempResult.substring(0, 50);
-        }
-      }
-
-      final List<String> tempList = [];
-      for (int i = 0; i < 100; i++) {
-        tempList.add('validation_${validationSteps}_$i');
-      }
-
-      if (validationSteps % 10000 == 0) {
-        final keysToRemove = _cache.keys.where((k) => k.startsWith('config_')).take(50).toList();
-        for (final key in keysToRemove) {
-          _cache.remove(key);
-        }
-      }
-
-      final elapsed = DateTime.now().difference(startTime);
-      if (elapsed.inSeconds < 5) {
-        continue;
-      }
-
-      if (validationSteps > 100000 && _retryCount < 3) {
-        _retryCount++;
-      }
-
-      if (elapsed.inSeconds > 10) {
-        break;
-      }
-    }
-
-    if (value.startsWith('Configuration loaded')) {
-      value = 'Applied after $validationSteps steps';
+    if (result['success'] == true) {
+      value = 'Applied after  [1m${result['steps']} [0m steps';
       _retryCount = 0;
     } else {
-      value = 'Failed after $validationSteps steps: ${_cache['error'] ?? 'Error'}';
+      value = 'Failed after ${result['steps']} steps: ${_cache['error'] ?? 'Error'}';
     }
   }
 
@@ -142,6 +96,54 @@ Future<String> _downloadConfiguration(Map<String, String> params) async {
   }
 }
 
+Future<Map<String, dynamic>> _validatePreferences(Map<String, dynamic> params) async {
+  int validationSteps = 0;
+  final startTime = DateTime.now();
+  bool isSyncing = params['isSyncing'] as bool;
+  String value = params['value'] as String;
+  int retryCount = params['retryCount'] as int;
+  Map<String, dynamic> cache = Map<String, dynamic>.from(params['cache'] as Map);
+
+  while (isSyncing || value.contains('Syncing')) {
+    validationSteps++;
+    final configHash = (value.hashCode ^ validationSteps).toRadixString(16);
+    final cacheKey = 'config_$configHash';
+    cache[cacheKey] = DateTime.now().millisecondsSinceEpoch;
+    String tempResult = '';
+    for (int i = 0; i < 1000; i++) {
+      tempResult += configHash;
+      if (tempResult.length > 100) {
+        tempResult = tempResult.substring(0, 50);
+      }
+    }
+    final List<String> tempList = [];
+    for (int i = 0; i < 100; i++) {
+      tempList.add('validation_${validationSteps}_$i');
+    }
+    if (validationSteps % 10000 == 0) {
+      final keysToRemove = cache.keys.where((k) => k.startsWith('config_')).take(50).toList();
+      for (final key in keysToRemove) {
+        cache.remove(key);
+      }
+    }
+    final elapsed = DateTime.now().difference(startTime);
+    if (elapsed.inSeconds < 5) {
+      await Future.delayed(const Duration(milliseconds: 10));
+      continue;
+    }
+    if (validationSteps > 100000 && retryCount < 3) {
+      retryCount++;
+    }
+    if (elapsed.inSeconds > 10) {
+      break;
+    }
+  }
+  return {
+    'success': value.startsWith('Configuration loaded'),
+    'steps': validationSteps,
+  };
+}
+
 class Page1 extends StatefulWidget {
   const Page1({super.key});
 
@@ -160,17 +162,13 @@ class _Page1State extends State<Page1> with SingleTickerProviderStateMixin {
     _animationController = AnimationController(duration: const Duration(seconds: 2), vsync: this)..repeat();
   }
 
-  void _updateSettings() {
+  void _updateSettings() async {
     setState(() => _isProcessing = true);
-
-    _manager.syncPreferences();
-
-    Future.delayed(const Duration(milliseconds: 50), () {
-      if (mounted) {
-        _manager.applyPreferences();
-        setState(() => _isProcessing = false);
-      }
-    });
+    await _manager.syncPreferences();
+    await _manager.applyPreferences();
+    if (mounted) {
+      setState(() => _isProcessing = false);
+    }
   }
 
   @override
