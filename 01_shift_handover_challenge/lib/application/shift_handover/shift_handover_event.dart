@@ -18,7 +18,22 @@ class AddNewNote extends ShiftHandoverEvent {
   const AddNewNote(this.text, this.type);
 }
 
+class UpdateNote extends ShiftHandoverEvent {
+  final HandoverNote note;
+  const UpdateNote(this.note);
+}
+
+class DeleteNote extends ShiftHandoverEvent {
+  final String noteId;
+  const DeleteNote(this.noteId);
+}
+
 class SubmitReport extends ShiftHandoverEvent {
   final String summary;
   const SubmitReport(this.summary);
+}
+
+class InputChanged extends ShiftHandoverEvent {
+  final String input;
+  const InputChanged(this.input);
 }
