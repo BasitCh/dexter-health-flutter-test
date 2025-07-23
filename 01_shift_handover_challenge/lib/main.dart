@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:shift_handover_challenge/features/shift_handover/shift_handover_screen.dart';
+import 'package:shift_handover_challenge/di.dart';
+import 'features/shift_handover/shift_handover_screen.dart';
 
 void main() {
+  setupDI();
   runApp(const MyApp());
 }
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:shift_handover_challenge/features/shift_handover/shift_handover_models.dart';
+import 'package:shift_handover_challenge/domain/entities/shift_handover_models.dart';
 
 class NoteCard extends StatelessWidget {
   final HandoverNote note;
@@ -49,29 +49,37 @@ class NoteCard extends StatelessWidget {
                 children: [
                   Text(
                     note.text,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(height: 1.4),
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodyLarge
+                        ?.copyWith(height: 1.4),
                   ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: color.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8.0),
                         ),
                         child: Text(
                           note.type.name.toUpperCase(),
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                color: color,
-                                fontWeight: FontWeight.bold,
-                              ),
+                          style:
+                              Theme.of(context).textTheme.labelMedium?.copyWith(
+                                    color: color,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                         ),
                       ),
                       Text(
                         DateFormat.jm().format(note.timestamp),
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey[600]),
+                        style: Theme.of(context)
+                            .textTheme
+                            .labelSmall
+                            ?.copyWith(color: Colors.grey[600]),
                       ),
                     ],
                   ),
