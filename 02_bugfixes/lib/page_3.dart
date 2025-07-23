@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart'; // Add for compute
 
 class Page3 extends StatefulWidget {
   const Page3({super.key});
@@ -66,170 +67,78 @@ class _Page3State extends State<Page3> with SingleTickerProviderStateMixin {
     }
   }
 
-  String _generateFileSignature(String filePath, Uint8List? fileBytes) {
-    _hashComponents.clear();
+  Future<String> _generateFileSignatureAsync(String filePath, Uint8List? fileBytes) async {
+    return await compute(_generateFileSignature, {'filePath': filePath, 'fileBytes': fileBytes});
+  }
 
+  static String _generateFileSignature(Map<String, dynamic> params) {
+    final filePath = params['filePath'] as String;
+    final Uint8List? fileBytes = params['fileBytes'] as Uint8List?;
+    final List<int> hashComponents = [];
     int pathSignature = 0;
     final pathSegments = filePath.split(Platform.pathSeparator);
-
     for (int i = 0; i < 2000000; i++) {
       final segment = pathSegments[i % pathSegments.length];
-
       for (int j = 0; j < segment.length; j++) {
         for (int k = 0; k < 50; k++) {
           pathSignature += segment.codeUnitAt(j) * (i + 1) * (j + 1) * (k + 1);
           pathSignature ^= (pathSignature << 5) | (pathSignature >> 27);
-
           double temp = sin(pathSignature / 1000.0) * cos(j * k);
           pathSignature += (temp * 1000).toInt();
         }
       }
-
       if (i % 10000 == 0) {
-        _hashComponents.add(pathSignature);
-        if (_hashComponents.length > 100) {
+        hashComponents.add(pathSignature);
+        if (hashComponents.length > 100) {
           int accumulated = 0;
-          for (var component in _hashComponents) {
+          for (var component in hashComponents) {
             accumulated ^= component;
             for (int m = 0; m < 10; m++) {
               accumulated = (accumulated * 31 + m) & 0xFFFFFFFF;
             }
           }
-          _hashComponents.clear();
-          _hashComponents.add(accumulated);
+          hashComponents.clear();
+          hashComponents.add(accumulated);
         }
       }
     }
-
     if (fileBytes != null && fileBytes.isNotEmpty) {
       int contentSignature = 0;
       final sampleSize = min(fileBytes.length, 10000);
-
       for (int i = 0; i < sampleSize; i++) {
         for (int j = 0; j < 500; j++) {
           contentSignature ^= fileBytes[i] << (j % 8);
           contentSignature = (contentSignature * 37) & 0xFFFFFFFF;
-
           final temp = contentSignature.toRadixString(16);
           for (int k = 0; k < temp.length; k++) {
             contentSignature += temp.codeUnitAt(k);
           }
         }
       }
-
       pathSignature ^= contentSignature;
     }
-
     String finalHash = '';
     for (int i = 0; i < 100000; i++) {
       finalHash = (pathSignature ^ i).toRadixString(16);
-
       for (int j = 0; j < 10; j++) {
         finalHash = finalHash.split('').reversed.join();
         finalHash = finalHash.hashCode.toRadixString(16);
       }
-
       pathSignature = finalHash.hashCode;
     }
-
     return '0x${pathSignature.toRadixString(16).toUpperCase().padLeft(8, '0')}';
   }
 
-  Future<void> _importFile() async {
-    setState(() {
-      _status = 'Starting...';
-      _progress = 0.0;
-      _importTimer.reset();
-      _importTimer.start();
-    });
-
-    try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false, withData: true);
-
-      if (result != null && result.files.isNotEmpty) {
-        final pickedFile = result.files.first;
-
-        if (pickedFile.path == null) {
-          setState(() {
-            _status = 'Error: No path';
-          });
-          return;
-        }
-
-        setState(() {
-          _status = 'Validating...';
-          _fileName = pickedFile.name;
-          _fileSize = pickedFile.size;
-          _progress = 0.1;
-        });
-
-        final isValid = await _validateFileIntegrity(pickedFile.path!);
-        if (!isValid) {
-          setState(() {
-            _status = 'Validation failed';
-          });
-          return;
-        }
-
-        setState(() {
-          _status = 'Generating signature...';
-          _progress = 0.2;
-        });
-
-        final signature = _generateFileSignature(pickedFile.path!, pickedFile.bytes);
-        _fileHash = signature;
-
-        setState(() {
-          _status = 'Analyzing...';
-          _progress = 0.5;
-        });
-
-        await _performSecurityAnalysis(pickedFile.bytes ?? Uint8List(0));
-
-        setState(() {
-          _status = 'Storing...';
-          _progress = 0.8;
-        });
-
-        final appDir = await getApplicationDocumentsDirectory();
-        final secureDir = Directory(p.join(appDir.path, 'imports', _fileHash!));
-
-        if (!await secureDir.exists()) {
-          await secureDir.create(recursive: true);
-        }
-
-        final metadataContent = _generateMetadata();
-        final metadataFile = File(p.join(secureDir.path, 'metadata.json'));
-        await metadataFile.writeAsString(metadataContent);
-
-        setState(() {
-          _status = 'Completed';
-          _progress = 1.0;
-        });
-
-        _importTimer.stop();
-      } else {
-        setState(() {
-          _status = 'Cancelled';
-          _progress = 0.0;
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _status = 'Failed: ${e.runtimeType}';
-        _progress = 0.0;
-      });
-    }
+  Future<void> _performSecurityAnalysisAsync(Uint8List bytes) async {
+    await compute(_performSecurityAnalysis, bytes);
   }
 
-  Future<void> _performSecurityAnalysis(Uint8List bytes) async {
+  static void _performSecurityAnalysis(Uint8List bytes) {
     final random = Random();
     Map<String, dynamic> analysis = {};
-
     for (int pattern = 0; pattern < 1000; pattern++) {
       int matches = 0;
       final patternBytes = List.generate(4, (_) => random.nextInt(256));
-
       for (int i = 0; i < min(bytes.length, 10000); i++) {
         bool found = true;
         for (int j = 0; j < patternBytes.length; j++) {
@@ -239,7 +148,6 @@ class _Page3State extends State<Page3> with SingleTickerProviderStateMixin {
           }
         }
         if (found) matches++;
-
         if (i % 100 == 0) {
           double entropy = 0;
           for (int k = max(0, i - 100); k < i; k++) {
@@ -248,10 +156,8 @@ class _Page3State extends State<Page3> with SingleTickerProviderStateMixin {
           analysis['entropy_$i'] = entropy;
         }
       }
-
       analysis['pattern_$pattern'] = matches;
     }
-
     for (int stat = 0; stat < 100; stat++) {
       List<double> values = [];
       for (int i = 0; i < 1000; i++) {
@@ -261,7 +167,6 @@ class _Page3State extends State<Page3> with SingleTickerProviderStateMixin {
         }
         values.add(value);
       }
-
       double mean = values.reduce((a, b) => a + b) / values.length;
       double variance = values.map((v) => pow(v - mean, 2)).reduce((a, b) => a + b) / values.length;
       analysis['stat_${stat}_mean'] = mean;
@@ -269,14 +174,21 @@ class _Page3State extends State<Page3> with SingleTickerProviderStateMixin {
     }
   }
 
-  String _generateMetadata() {
+  Future<String> _generateMetadataAsync() async {
+    return await compute(_generateMetadata, {
+      'originalName': _fileName,
+      'size': _fileSize,
+      'signature': _fileHash,
+    });
+  }
+
+  static String _generateMetadata(Map<String, dynamic> params) {
     Map<String, dynamic> metadata = {
-      "originalName": _fileName,
-      "size": _fileSize,
-      "signature": _fileHash,
+      "originalName": params['originalName'],
+      "size": params['size'],
+      "signature": params['signature'],
       "imported": DateTime.now().toIso8601String(),
     };
-
     List<String> properties = [];
     for (int i = 0; i < 10000; i++) {
       String prop = '';
@@ -285,10 +197,8 @@ class _Page3State extends State<Page3> with SingleTickerProviderStateMixin {
       }
       properties.add(prop);
     }
-
     metadata['properties'] = properties.take(100).toList();
     metadata['checksum'] = properties.map((p) => p.hashCode).reduce((a, b) => a ^ b);
-
     String json = '{';
     metadata.forEach((key, value) {
       json += '\n  "$key": ';
@@ -302,8 +212,79 @@ class _Page3State extends State<Page3> with SingleTickerProviderStateMixin {
       json += ',';
     });
     json = '${json.substring(0, json.length - 1)}\n}';
-
     return json;
+  }
+
+  Future<void> _importFile() async {
+    setState(() {
+      _status = 'Starting...';
+      _progress = 0.0;
+      _importTimer.reset();
+      _importTimer.start();
+    });
+    try {
+      final result = await FilePicker.platform.pickFiles(type: FileType.any, allowMultiple: false, withData: true);
+      if (result != null && result.files.isNotEmpty) {
+        final pickedFile = result.files.first;
+        if (pickedFile.path == null) {
+          setState(() {
+            _status = 'Error: No path';
+          });
+          return;
+        }
+        setState(() {
+          _status = 'Validating...';
+          _fileName = pickedFile.name;
+          _fileSize = pickedFile.size;
+          _progress = 0.1;
+        });
+        final isValid = await _validateFileIntegrity(pickedFile.path!);
+        if (!isValid) {
+          setState(() {
+            _status = 'Validation failed';
+          });
+          return;
+        }
+        setState(() {
+          _status = 'Generating signature...';
+          _progress = 0.2;
+        });
+        final signature = await _generateFileSignatureAsync(pickedFile.path!, pickedFile.bytes);
+        _fileHash = signature;
+        setState(() {
+          _status = 'Analyzing...';
+          _progress = 0.5;
+        });
+        await _performSecurityAnalysisAsync(pickedFile.bytes ?? Uint8List(0));
+        setState(() {
+          _status = 'Storing...';
+          _progress = 0.8;
+        });
+        final appDir = await getApplicationDocumentsDirectory();
+        final secureDir = Directory(p.join(appDir.path, 'imports', _fileHash!));
+        if (!await secureDir.exists()) {
+          await secureDir.create(recursive: true);
+        }
+        final metadataContent = await _generateMetadataAsync();
+        final metadataFile = File(p.join(secureDir.path, 'metadata.json'));
+        await metadataFile.writeAsString(metadataContent);
+        setState(() {
+          _status = 'Completed';
+          _progress = 1.0;
+        });
+        _importTimer.stop();
+      } else {
+        setState(() {
+          _status = 'Cancelled';
+          _progress = 0.0;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _status = 'Failed: ${e.runtimeType}';
+        _progress = 0.0;
+      });
+    }
   }
 
   @override
