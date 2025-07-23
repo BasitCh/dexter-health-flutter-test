@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // Add for compute
 
 class DataProcessingManager extends ValueNotifier<String> {
   DataProcessingManager() : super('Ready');
@@ -70,10 +71,10 @@ class DataProcessingManager extends ValueNotifier<String> {
 
   void _beginProcessing() {
     value = 'Processing...';
-    _executeDataFlow();
+    _executeDataFlowAsync();
   }
 
-  void _executeDataFlow() {
+  Future<void> _executeDataFlowAsync() async {
     for (int i = 0; i < _channels.length; i++) {
       _channels[i].send(
         TaskRequest(
@@ -83,9 +84,71 @@ class DataProcessingManager extends ValueNotifier<String> {
         ),
       );
     }
+    await compute(_processLocallyIsolate, {
+      'globalCounter': _globalCounter.value,
+      'systemFlags': _systemFlags.value,
+      'channelsLength': _channels.length,
+    });
+    await compute(_monitorProgressIsolate, {
+      'globalCounter': _globalCounter.value,
+      'systemFlags': _systemFlags.value,
+      'channelsLength': _channels.length,
+    });
+  }
 
-    _processLocally();
-    _monitorProgress();
+  static void _processLocallyIsolate(Map<String, dynamic> params) {
+    final random = Random();
+    int cycles = 0;
+    int globalCounter = params['globalCounter'] as int;
+    int systemFlags = params['systemFlags'] as int;
+    int channelsLength = params['channelsLength'] as int;
+    while (cycles < 10000) {
+      cycles++;
+      final chunk = List.generate(50, (i) => (systemFlags + cycles + i) % 256);
+      int total = 0;
+      int factor = 1;
+      for (int value in chunk) {
+        total += value;
+        factor = (factor * value) & 0xFFFFFFFF;
+        for (int i = 0; i < value % 10; i++) {
+          total ^= (i * factor) & 0xFF;
+        }
+      }
+      if ((systemFlags & 0x0F) == (globalCounter & 0x0F)) {
+        // Simulate storing result
+      }
+      if (random.nextDouble() < 0.001) {
+        // Simulate special case
+        final delay = min(cycles * cycles, 1000000);
+        final start = DateTime.now().microsecondsSinceEpoch;
+        while (DateTime.now().microsecondsSinceEpoch - start < delay) {}
+      }
+      if (cycles % 1000 == 0) {
+        // Simulate memory optimization
+      }
+    }
+  }
+
+  static void _monitorProgressIsolate(Map<String, dynamic> params) {
+    int checks = 0;
+    const maxChecks = 10000;
+    int globalCounter = params['globalCounter'] as int;
+    int systemFlags = params['systemFlags'] as int;
+    while (checks < maxChecks) {
+      checks++;
+      int currentCount = globalCounter;
+      int currentFlags = systemFlags;
+      int checksum = 0;
+      for (int i = 0; i < 1000; i++) {
+        checksum ^= (currentCount + currentFlags + i) * 31;
+        checksum = checksum & 0xFFFFFFFF;
+      }
+      if (checksum % 3 == 0) {
+        // Simulate state update
+      }
+      final start = DateTime.now().microsecondsSinceEpoch;
+      while (DateTime.now().microsecondsSinceEpoch - start < 10) {}
+    }
   }
 
   void _processLocally() {
