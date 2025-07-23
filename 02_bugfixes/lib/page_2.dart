@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // Add this import for compute
+import 'dart:isolate'; // Added for compute
 
 class Page2 extends StatefulWidget {
   const Page2({super.key});
@@ -36,159 +38,106 @@ class _Page2State extends State<Page2> with TickerProviderStateMixin {
 
   Future<void> _performDataSync() async {
     if (_isProcessing) return;
-
     setState(() {
       _isProcessing = true;
       _status = 'Initializing...';
       _operationTimer.reset();
       _operationTimer.start();
     });
-
     _progressController.forward();
-
-    _startDatabaseOperation();
-    _startFileOperation();
-    _startBackgroundSync();
-
+    await _startDatabaseOperation();
+    await _startFileOperation();
+    await _startBackgroundSync();
     await Future.delayed(const Duration(milliseconds: 100));
-    _createDeadlock();
-  }
-
-  void _startDatabaseOperation() {
-    Timer.periodic(const Duration(milliseconds: 50), (timer) {
-      _activeTimers.add(timer);
-
-      if (!_databaseLocked) {
-        _databaseLocked = true;
-        setState(() {
-          _status = 'Operation A in progress...';
-        });
-
-        int result = 0;
-        for (int i = 0; i < 5000000; i++) {
-          result += i * i;
-          if (i % 1000000 == 0) {
-            _transactionCache['db_progress'] = i;
-          }
-        }
-
-        Timer.periodic(const Duration(milliseconds: 10), (innerTimer) {
-          if (!_fileLocked) {
-            setState(() {
-              _status = 'Operation A waiting...';
-            });
-          }
-        });
-      }
+    await _createDeadlock();
+    setState(() {
+      _isProcessing = false;
+      _status = 'System ready';
     });
   }
 
-  void _startFileOperation() {
-    Timer.periodic(const Duration(milliseconds: 60), (timer) {
-      _activeTimers.add(timer);
-
-      if (!_fileLocked) {
-        _fileLocked = true;
-        setState(() {
-          _status = 'Operation B in progress...';
-        });
-
-        String data = '';
-        for (int i = 0; i < 100000; i++) {
-          data += 'Processing block $i\n';
-          if (data.length > 10000) {
-            data = data.substring(0, 5000);
-          }
-          _transactionCache['file_size'] = data.length;
-        }
-
-        Timer.periodic(const Duration(milliseconds: 10), (innerTimer) {
-          if (!_databaseLocked) {
-            setState(() {
-              _status = 'Operation B waiting...';
-            });
-          }
-        });
-      }
+  Future<void> _startDatabaseOperation() async {
+    setState(() {
+      _status = 'Operation A in progress...';
     });
+    await compute(_heavyDatabaseWork, null);
   }
 
-  void _startBackgroundSync() {
-    Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      _activeTimers.add(timer);
-
-      final List<List<int>> memoryConsumer = [];
-      for (int i = 0; i < 100; i++) {
-        memoryConsumer.add(List.generate(1000, (index) => Random().nextInt(1000)));
+  static void _heavyDatabaseWork(dynamic _) {
+    int result = 0;
+    for (int i = 0; i < 5000000; i++) {
+      result += i * i;
+      if (i % 1000000 == 0) {
+        // Simulate progress update (no-op in isolate)
       }
-
-      double result = 0;
-      for (int i = 0; i < 10000; i++) {
-        result += sin(i) * cos(i) * tan(i / 100);
-      }
-
-      _transactionCount++;
-      if (mounted) {
-        setState(() {
-          _transactionCache['sync_count'] = _transactionCount;
-        });
-      }
-    });
+    }
   }
 
-  void _createDeadlock() {
-    final completer1 = Completer();
-    final completer2 = Completer();
+  Future<void> _startFileOperation() async {
+    setState(() {
+      _status = 'Operation B in progress...';
+    });
+    await compute(_heavyFileWork, null);
+  }
 
-    _lockQueue.add(completer1);
-    _lockQueue.add(completer2);
+  static void _heavyFileWork(dynamic _) {
+    String data = '';
+    for (int i = 0; i < 100000; i++) {
+      data += 'Processing block $i\n';
+      if (data.length > 10000) {
+        data = data.substring(0, 5000);
+      }
+    }
+  }
 
-    Timer(const Duration(milliseconds: 200), () async {
+  Future<void> _startBackgroundSync() async {
+    setState(() {
+      _status = 'Background sync...';
+    });
+    await compute(_heavyBackgroundSync, null);
+    _transactionCount++;
+    if (mounted) {
       setState(() {
-        _status = 'Task 1 waiting for Task 2...';
+        _transactionCache['sync_count'] = _transactionCount;
       });
+    }
+  }
 
-      while (!completer2.isCompleted) {
-        int sum = 0;
-        for (int i = 0; i < 100000; i++) {
-          sum += i * i;
-        }
+  static void _heavyBackgroundSync(dynamic _) {
+    final List<List<int>> memoryConsumer = [];
+    final random = Random();
+    for (int i = 0; i < 100; i++) {
+      memoryConsumer.add(List.generate(1000, (index) => random.nextInt(1000)));
+    }
+    double result = 0;
+    for (int i = 0; i < 10000; i++) {
+      result += sin(i) * cos(i) * tan(i / 100);
+    }
+  }
 
-        Timer(const Duration(microseconds: 100), () {
-          _transactionCache['wait_cycles'] = (_transactionCache['wait_cycles'] ?? 0) + 1;
-        });
-      }
-
-      completer1.complete();
+  Future<void> _createDeadlock() async {
+    setState(() {
+      _status = 'Simulating deadlock...';
     });
-
-    Timer(const Duration(milliseconds: 300), () async {
-      setState(() {
-        _status = 'Task 2 waiting for Task 1...';
-      });
-
-      while (!completer1.isCompleted) {
-        String result = '';
-        for (int i = 0; i < 10000; i++) {
-          result = '${result.hashCode ^ i}';
-          if (result.length > 20) {
-            result = result.substring(0, 10);
-          }
-        }
-      }
-
-      completer2.complete();
+    await compute(_simulateDeadlock, null);
+    setState(() {
+      _status = 'Deadlock simulation complete.';
     });
+  }
 
-    Timer(const Duration(seconds: 15), () {
-      if (!completer1.isCompleted || !completer2.isCompleted) {
-        setState(() {
-          _status = 'Process failed. Recovering.';
-          _isProcessing = false;
-        });
-        _cleanup();
+  static void _simulateDeadlock(dynamic _) {
+    // Simulate two tasks waiting on each other (no real deadlock, just heavy work)
+    int sum1 = 0;
+    for (int i = 0; i < 10000000; i++) {
+      sum1 += i * i;
+    }
+    String result = '';
+    for (int i = 0; i < 100000; i++) {
+      result = '${result.hashCode ^ i}';
+      if (result.length > 20) {
+        result = result.substring(0, 10);
       }
-    });
+    }
   }
 
   void _cleanup() {
